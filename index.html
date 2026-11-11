@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>KEM管理ツール - 禁煙成果自動管理</title>
+    <!-- PWA用メタタグ -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="KEM管理">
+    <link rel="manifest" href="data:application/manifest+json;charset=utf-8,%7B%22name%22%3A%22KEM管理ツール%22%2C%22short_name%22%3A%22KEM%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23f8fafc%22%2C%22theme_color%22%3A%22%233b82f6%22%7D">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js (グラフ用) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 pb-20">
+
+    <!-- ヘッダー -->
+    <header class="bg-blue-600 text-white p-4 shadow-md sticky top-0 z-50">
+        <div class="max-w-md mx-auto flex justify-between items-center">
+            <h1 class="text-lg font-bold tracking-wider">🚬 KEM管理ツール</h1>
+            <span class="text-xs bg-blue-700 px-2 py-1 rounded">日本時間 (JST)</span>
+        </div>
+    </header>
+
+    <!-- メインコンテンツ領域 -->
+    <main class="max-w-md mx-auto p-4">
+
+        <!-- 初期設定モーダル（初回未設定時や設定変更時） -->
+        <div id="setup-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl max-h-[90vh] overflow-y-auto">
+                <h2 class="text-xl font-bold mb-4 text-slate-900">初期設定（マスタ）</h2>
+                <form id="setup-form" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">禁煙スローガン・決意（任意）</label>
+                        <input type="text" id="setup-slogan" placeholder="例：家族のために絶対禁煙する！" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">禁煙開始日時 (日本時間)</label>
+                        <input type="datetime-local" id="setup-start-date" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">禁煙前の1日平均喫煙本数</label>
+                        <input type="number" id="setup-avg-count" min="1" max="200" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">タバコ1箱の価格（円）</label>
+                        <input type="number" id="setup-box-price" min="1" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">1箱の本数</label>
+                        <input type="number" id="setup-box-count" value="20" min="1" required class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition">保存する</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- tab1: ホーム画面 -->
+        <section id="tab-home" class="tab-content active space-y-4">
+            <!-- スローガン表示カード（文字切れ防止のため折り返し＆少し小さい文字サイズに対応） -->
+            <div id="home-slogan-card" class="hidden bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-2xl p-4 shadow-md flex items-center gap-3">
+                <span class="text-2xl flex-shrink-0">🎯</span>
+                <div class="flex-1 min-w-0">
+                    <p class="text-[10px] uppercase tracking-wider text-amber-100 font-bold">マイ・スローガン</p>
+                    <p id="home-slogan-text" class="text-sm font-bold leading-snug break-words"></p>
+                </div>
+            </div>
+
+            <div class="bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-2xl p-6 shadow-lg text-center space-y-3">
+                <div>
+                    <p class="text-blue-100 text-xs font-medium">現在の禁煙継続時間</p>
+                    <h2 id="stat-continuous-time" class="text-3xl font-extrabold my-1 tracking-tight">0日 0時間0分</h2>
+                    <p id="stat-elapsed-days" class="text-xs text-blue-200">禁煙開始からの経過日数: 0日</p>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-2 pt-3 border-t border-blue-400/40 text-left">
+                    <div class="bg-white/10 p-2.5 rounded-xl">
+                        <p class="text-[10px] text-blue-200 font-medium">禁煙開始日時</p>
+                        <p id="home-start-date" class="text-xs font-bold mt-0.5 tracking-tight">-</p>
+                    </div>
+                    <div class="bg-white/10 p-2.5 rounded-xl">
+                        <p class="text-[10px] text-blue-200 font-medium">最終喫煙日</p>
+                        <p id="home-last-smoke" class="text-xs font-bold mt-0.5 tracking-tight">なし (全期間達成)</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                    <p class="text-xs text-slate-500 font-medium">禁煙できた推定本数</p>
+                    <p id="stat-saved-cigs" class="text-2xl font-bold text-blue-600 mt-1">0 <span class="text-sm font-normal">本</span></p>
+                </div>
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                    <p class="text-xs text-slate-500 font-medium">累計節約金額 (推定)</p>
+                    <p id="stat-saved-money" class="text-2xl font-bold text-emerald-600 mt-1">¥0</p>
+                </div>
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                    <p class="text-xs text-slate-500 font-medium">禁煙できた推定割合</p>
+                    <p id="stat-success-rate" class="text-2xl font-bold text-slate-800 mt-1">100%</p>
+                </div>
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                    <p class="text-xs text-slate-500 font-medium">累計喫煙本数</p>
+                    <p id="stat-total-smoked" class="text-2xl font-bold text-rose-500 mt-1">0 <span class="text-sm font-normal">本</span></p>
+                </div>
+            </div>
+
+            <!-- クイック喫煙記録ボタン -->
+            <button onclick="switchTab('record'); prepareQuickRecord();" class="w-full bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 font-bold p-4 rounded-2xl flex items-center justify-center gap-2 transition shadow-sm">
+                <span class="text-xl">🚬</span> 吸ってしまった場合はこちらを記録
+            </button>
+        </section>
+
+        <!-- tab2: 喫煙記録画面 -->
+        <section id="tab-record" class="tab-content space-y-4">
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                <h3 class="font-bold text-base text-slate-900 mb-3">喫煙記録の追加 / 編集</h3>
+                <form id="record-form" class="space-y-3">
+                    <input type="hidden" id="record-id">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">喫煙日時 (日本時間)</label>
+                        <input type="datetime-local" id="rec-datetime" required class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">喫煙本数</label>
+                        <input type="number" id="rec-count" min="1" value="1" required class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">状況・理由（任意）</label>
+                        <input type="text" id="rec-reason" placeholder="例：飲み会の席でつい" class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">タイミング・場所（任意）</label>
+                        <select id="rec-timing" class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white">
+                            <option value="">選択してください</option>
+                            <option value="仕事中・休憩">仕事中・休憩</option>
+                            <option value="食後">食後</option>
+                            <option value="飲酒時">飲酒時</option>
+                            <option value="ストレス・イライラ">ストレス・イライラ</option>
+                            <option value="起床時">起床時</option>
+                            <option value="その他">その他</option>
+                        </select>
+                    </div>
+                    <div class="flex gap-2 pt-2">
+                        <button type="submit" id="rec-submit-btn" class="flex-1 bg-blue-600 text-white font-bold py-2.5 rounded-xl text-sm hover:bg-blue-700 transition">記録を追加</button>
+                        <button type="button" id="rec-cancel-btn" onclick="resetRecordForm()" class="hidden bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-xl text-sm hover:bg-slate-300 transition">キャンセル</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- 記録一覧 -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                <h3 class="font-bold text-base text-slate-900 mb-3">喫煙記録履歴</h3>
+                <div id="record-list" class="space-y-2 max-h-64 overflow-y-auto">
+                    <!-- 動的挿入 -->
+                </div>
+            </div>
+        </section>
+
+        <!-- tab3: 分析・グラフ画面 -->
+        <section id="tab-analytics" class="tab-content space-y-4">
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+                <div class="flex justify-between items-center">
+                    <h3 class="font-bold text-base text-slate-900">成果推移グラフ</h3>
+                    <select id="chart-period" onchange="renderCharts()" class="border border-slate-300 rounded-lg px-2 py-1 text-xs bg-white">
+                        <option value="7">過去7日間</option>
+                        <option value="30" selected>過去30日間</option>
+                        <option value="90">過去90日間</option>
+                        <option value="all">全期間</option>
+                    </select>
+                </div>
+                <div>
+                    <canvas id="savingsChart" height="180"></canvas>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-3">
+                <h3 class="font-bold text-base text-slate-900">喫煙傾向・サマリー</h3>
+                <div id="analytics-summary" class="text-sm text-slate-600 space-y-2">
+                    <!-- 動的挿入 -->
+                </div>
+            </div>
+        </section>
+
+        <!-- tab4: 設定画面 -->
+        <section id="tab-settings" class="tab-content space-y-4">
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+                <h3 class="font-bold text-base text-slate-900">マスタ設定・バックアップ</h3>
+                <button onclick="openSetupModal()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-2.5 rounded-xl text-sm transition">
+                    初期設定（マスタ・スローガン）を変更する
+                </button>
+                <div class="border-t border-slate-100 pt-3 space-y-2">
+                    <p class="text-xs font-medium text-slate-600">データ管理</p>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="exportJSON()" class="bg-blue-50 text-blue-600 border border-blue-200 font-bold py-2 rounded-xl text-xs hover:bg-blue-100 transition">JSONバックアップ</button>
+                        <button onclick="exportCSV()" class="bg-blue-50 text-blue-600 border border-blue-200 font-bold py-2 rounded-xl text-xs hover:bg-blue-100 transition">CSV出力</button>
+                    </div>
+                    <label class="block w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl text-xs text-center cursor-pointer transition">
+                        バックアップから復元 (JSON)
+                        <input type="file" accept=".json" onchange="importJSON(event)" class="hidden">
+                    </label>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ボトムナビゲーション -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 py-2 px-4 shadow-lg z-40">
+        <div class="max-w-md mx-auto flex justify-around">
+            <button onclick="switchTab('home')" class="nav-btn flex flex-col items-center text-blue-600" data-target="tab-home">
+                <span class="text-xl">🏠</span>
+                <span class="text-[10px] font-medium mt-0.5">ホーム</span>
+            </button>
+            <button onclick="switchTab('record')" class="nav-btn flex flex-col items-center text-slate-400" data-target="tab-record">
+                <span class="text-xl">📝</span>
+                <span class="text-[10px] font-medium mt-0.5">喫煙記録</span>
+            </button>
+            <button onclick="switchTab('analytics')" class="nav-btn flex flex-col items-center text-slate-400" data-target="tab-analytics">
+                <span class="text-xl">📊</span>
+                <span class="text-[10px] font-medium mt-0.5">分析・グラフ</span>
+            </button>
+            <button onclick="switchTab('settings')" class="nav-btn flex flex-col items-center text-slate-400" data-target="tab-settings">
+                <span class="text-xl">⚙️</span>
+                <span class="text-[10px] font-medium mt-0.5">設定</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- アプリケーションロジック -->
+    <script>
+        const STORAGE_KEY = 'kem_app_data_v1';
+        let appData = loadData();
+
+        function getJSTLocalString(dateObj = new Date()) {
+            const jstString = dateObj.toLocaleString("en-US", { timeZone: "Asia/Tokyo" });
+            const jstDate = new Date(jstString);
+            const year = jstDate.getFullYear();
+            const month = String(jstDate.getMonth() + 1).padStart(2, '0');
+            const day = String(jstDate.getDate()).padStart(2, '0');
+            const hours = String(jstDate.getHours()).padStart(2, '0');
+            const minutes = String(jstDate.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+
+        function formatJSTDisplay(dateObj) {
+            const jstString = dateObj.toLocaleString("en-US", { timeZone: "Asia/Tokyo" });
+            const jstDate = new Date(jstString);
+            const year = jstDate.getFullYear();
+            const month = jstDate.getMonth() + 1;
+            const day = jstDate.getDate();
+            const hours = String(jstDate.getHours()).padStart(2, '0');
+            const minutes = String(jstDate.getMinutes()).padStart(2, '0');
+            return `${year}/${month}/${day} ${hours}:${minutes}`;
+        }
+
+        function getJSTISOString(dateObj = new Date()) {
+            const jstString = dateObj.toLocaleString("en-US", { timeZone: "Asia/Tokyo" });
+            const jstDate = new Date(jstString);
+            return jstDate.toISOString();
+        }
+
+        function getDefaultData() {
+            return {
+                master: {
+                    slogan: '健康と節約のために絶対禁煙！',
+                    startDate: getJSTISOString(),
+                    avgDailyCount: 15,
+                    boxPrice: 550,
+                    boxCount: 20
+                },
+                records: [] 
+            };
+        }
+
+        function loadData() {
+            const data = localStorage.getItem(STORAGE_KEY);
+            if (!data) return getDefaultData();
+            try { 
+                const parsed = JSON.parse(data);
+                if (parsed.master && parsed.master.slogan === undefined) {
+                    parsed.master.slogan = '';
+                }
+                return parsed; 
+            } catch (e) { return getDefaultData(); }
+        }
+
+        function saveData() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+            updateDashboard();
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            if (!localStorage.getItem(STORAGE_KEY)) {
+                openSetupModal();
+            }
+            updateDashboard();
+            renderRecordList();
+            renderCharts();
+            prepareQuickRecord();
+            
+            setInterval(updateDashboard, 60000);
+        });
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-' + tabId).classList.add('active');
+
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                if (btn.dataset.target === 'tab-' + tabId) {
+                    btn.classList.remove('text-slate-400');
+                    btn.classList.add('text-blue-600');
+                } else {
+                    btn.classList.remove('text-blue-600');
+                    btn.classList.add('text-slate-400');
+                }
+            });
+            window.scrollTo(0, 0);
+            if(tabId === 'analytics') renderCharts();
+        }
+
+        function openSetupModal() {
+            const m = appData.master;
+            document.getElementById('setup-slogan').value = m.slogan || '';
+            const startDateObj = new Date(m.startDate);
+            document.getElementById('setup-start-date').value = getJSTLocalString(startDateObj);
+            document.getElementById('setup-avg-count').value = m.avgDailyCount;
+            document.getElementById('setup-box-price').value = m.boxPrice;
+            document.getElementById('setup-box-count').value = m.boxCount;
+            document.getElementById('setup-modal').classList.remove('hidden');
+        }
+
+        document.getElementById('setup-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const sloganVal = document.getElementById('setup-slogan').value;
+            const inputVal = document.getElementById('setup-start-date').value;
+            const isoString = new Date(inputVal).toISOString();
+
+            appData.master = {
+                slogan: sloganVal,
+                startDate: isoString,
+                avgDailyCount: parseFloat(document.getElementById('setup-avg-count').value),
+                boxPrice: parseFloat(document.getElementById('setup-box-price').value),
+                boxCount: parseFloat(document.getElementById('setup-box-count').value)
+            };
+            saveData();
+            document.getElementById('setup-modal').classList.add('hidden');
+            updateDashboard();
+        });
+
+        function updateDashboard() {
+            const m = appData.master;
+            
+            const sloganCard = document.getElementById('home-slogan-card');
+            const sloganText = document.getElementById('home-slogan-text');
+            if (m.slogan && m.slogan.trim() !== '') {
+                sloganText.innerText = m.slogan;
+                sloganCard.classList.remove('hidden');
+            } else {
+                sloganCard.classList.add('hidden');
+            }
+
+            const start = new Date(m.startDate);
+            const now = new Date();
+
+            document.getElementById('home-start-date').innerText = formatJSTDisplay(start);
+
+            let lastSmokeTime = start;
+            let lastSmokeText = 'なし (全期間達成)';
+            if (appData.records.length > 0) {
+                const sorted = [...appData.records].sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
+                const latestRecDate = new Date(sorted[0].datetime);
+                lastSmokeText = formatJSTDisplay(latestRecDate);
+                if (latestRecDate > start) {
+                    lastSmokeTime = latestRecDate;
+                }
+            }
+            document.getElementById('home-last-smoke').innerText = lastSmokeText;
+
+            const diffMs = now - start;
+            if (diffMs < 0) {
+                document.getElementById('stat-elapsed-days').innerText = '禁煙開始前です';
+                return;
+            }
+
+            const elapsedDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            document.getElementById('stat-elapsed-days').innerText = `禁煙開始からの経過日数: ${elapsedDays}日`;
+
+            const contDiffMs = now - lastSmokeTime;
+            const contHoursTotal = Math.max(0, Math.floor(contDiffMs / (1000 * 60 * 60)));
+            const contDays = Math.floor(contHoursTotal / 24);
+            const contHours = contHoursTotal % 24;
+            const contMinutes = Math.max(0, Math.floor((contDiffMs % (1000 * 60 * 60)) / (1000 * 60)));
+            document.getElementById('stat-continuous-time').innerText = `${contDays}日 ${contHours}時間${contMinutes}分`;
+
+            const totalElapsedDaysExact = diffMs / (1000 * 60 * 60 * 24);
+            const estimatedSmokeCount = m.avgDailyCount * totalElapsedDaysExact;
+
+            const totalActualSmoked = appData.records.reduce((sum, r) => sum + Number(r.count), 0);
+            let savedCigs = Math.round(estimatedSmokeCount - totalActualSmoked);
+            if (savedCigs < 0) savedCigs = 0;
+
+            const pricePerCig = m.boxPrice / m.boxCount;
+            const savedMoney = Math.round(savedCigs * pricePerCig);
+
+            let successRate = 100;
+            if (estimatedSmokeCount > 0) {
+                successRate = Math.max(0, Math.min(100, Math.round(((estimatedSmokeCount - totalActualSmoked) / estimatedSmokeCount) * 100)));
+            }
+
+            document.getElementById('stat-saved-cigs').innerHTML = `${savedCigs.toLocaleString()} <span class="text-sm font-normal">本</span>`;
+            document.getElementById('stat-saved-money').innerText = `¥${savedMoney.toLocaleString()}`;
+            document.getElementById('stat-success-rate').innerText = `${successRate}%`;
+            document.getElementById('stat-total-smoked').innerHTML = `${totalActualSmoked.toLocaleString()} <span class="text-sm font-normal">本</span>`;
+
+            renderAnalyticsSummary();
+        }
+
+        function prepareQuickRecord() {
+            document.getElementById('rec-datetime').value = getJSTLocalString();
+            document.getElementById('rec-count').value = 1;
+            document.getElementById('rec-reason').value = '';
+            document.getElementById('rec-timing').value = '';
+            document.getElementById('record-id').value = '';
+            document.getElementById('rec-submit-btn').innerText = '記録を追加';
+            document.getElementById('rec-cancel-btn').classList.add('hidden');
+        }
+
+        document.getElementById('record-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const id = document.getElementById('record-id').value;
+            const datetime = new Date(document.getElementById('rec-datetime').value).toISOString();
+            const count = parseInt(document.getElementById('rec-count').value);
+            const reason = document.getElementById('rec-reason').value;
+            const timing = document.getElementById('rec-timing').value;
+
+            if (id) {
+                const idx = appData.records.findIndex(r => r.id === id);
+                if (idx !== -1) {
+                    appData.records[idx] = { id, datetime, count, reason, timing };
+                }
+            } else {
+                const newRecord = {
+                    id: '_' + Math.random().toString(36).substr(2, 9),
+                    datetime,
+                    count,
+                    reason,
+                    timing
+                };
+                appData.records.push(newRecord);
+            }
+
+            saveData();
+            renderRecordList();
+            prepareQuickRecord();
+            switchTab('home');
+        });
+
+        function renderRecordList() {
+            const listEl = document.getElementById('record-list');
+            if (appData.records.length === 0) {
+                listEl.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">喫煙記録はまだありません。素晴らしい調子です！</p>';
+                return;
+            }
+
+            const sorted = [...appData.records].sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
+            listEl.innerHTML = sorted.map(r => {
+                const d = new Date(r.datetime);
+                const jstStr = d.toLocaleString("en-US", { timeZone: "Asia/Tokyo" });
+                const jstDate = new Date(jstStr);
+                const dateStr = `${jstDate.getFullYear()}/${jstDate.getMonth()+1}/${jstDate.getDate()} ${String(jstDate.getHours()).padStart(2,'0')}:${String(jstDate.getMinutes()).padStart(2,'0')}`;
+                
+                return `
+                    <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 text-sm">
+                        <div>
+                            <div class="font-bold text-slate-800">${dateStr} (JST) - <span class="text-rose-500">${r.count}本</span></div>
+                            <div class="text-xs text-slate-500">${r.timing ? '[' + r.timing + '] ' : ''}${r.reason || '理由なし'}</div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="editRecord('${r.id}')" class="text-xs bg-slate-200 hover:bg-slate-300 px-2.5 py-1 rounded-lg font-medium">編集</button>
+                            <button onclick="deleteRecord('${r.id}')" class="text-xs bg-rose-100 text-rose-600 hover:bg-rose-200 px-2.5 py-1 rounded-lg font-medium">削除</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function editRecord(id) {
+            const r = appData.records.find(item => item.id === id);
+            if (!r) return;
+            switchTab('record');
+            document.getElementById('record-id').value = r.id;
+            const d = new Date(r.datetime);
+            document.getElementById('rec-datetime').value = getJSTLocalString(d);
+            document.getElementById('rec-count').value = r.count;
+            document.getElementById('rec-reason').value = r.reason || '';
+            document.getElementById('rec-timing').value = r.timing || '';
+            document.getElementById('rec-submit-btn').innerText = '記録を更新';
+            document.getElementById('rec-cancel-btn').classList.remove('hidden');
+        }
+
+        function resetRecordForm() {
+            prepareQuickRecord();
+        }
+
+        function deleteRecord(id) {
+            if (confirm('この喫煙記録を削除しますか？')) {
+                appData.records = appData.records.filter(r => r.id !== id);
+                saveData();
+                renderRecordList();
+            }
+        }
+
+        function renderAnalyticsSummary() {
+            const summaryEl = document.getElementById('analytics-summary');
+            if (appData.records.length === 0) {
+                summaryEl.innerHTML = '<p class="text-xs text-slate-400 text-center py-2">十分な喫煙データがありません（データ不足）</p>';
+                return;
+            }
+
+            const m = appData.master;
+            const pricePerCig = m.boxPrice / m.boxCount;
+            const monthlySave = Math.round(m.avgDailyCount * 30 * pricePerCig);
+            const yearlySave = Math.round(m.avgDailyCount * 365 * pricePerCig);
+
+            summaryEl.innerHTML = `
+                <div class="flex justify-between border-b border-slate-100 py-1.5 text-xs">
+                    <span class="text-slate-500">1か月換算の節約見込み</span>
+                    <span class="font-bold text-slate-800">約 ¥${monthlySave.toLocaleString()}</span>
+                </div>
+                <div class="flex justify-between border-b border-slate-100 py-1.5 text-xs">
+                    <span class="text-slate-500">1年換算の節約見込み</span>
+                    <span class="font-bold text-slate-800">約 ¥${yearlySave.toLocaleString()}</span>
+                </div>
+                <div class="flex justify-between py-1.5 text-xs">
+                    <span class="text-slate-500">累計喫煙日数（記録回数）</span>
+                    <span class="font-bold text-slate-800">${appData.records.length} 回</span>
+                </div>
+            `;
+        }
+
+        let myChart = null;
+        function renderCharts() {
+            const ctx = document.getElementById('savingsChart').getContext('2d');
+            const period = document.getElementById('chart-period').value;
+            
+            const daysCount = period === 'all' ? 30 : parseInt(period);
+            const labels = [];
+            const dataPoints = [];
+
+            const m = appData.master;
+            const pricePerCig = m.boxPrice / m.boxCount;
+            const startDate = new Date(m.startDate);
+
+            for (let i = daysCount - 1; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                const dateStr = `${d.getMonth()+1}/${d.getDate()}`;
+                labels.push(dateStr);
+
+                const targetEnd = new Date(d.setHours(23,59,59,999));
+                const diffMs = targetEnd - startDate;
+                if (diffMs < 0) {
+                    dataPoints.push(0);
+                    continue;
+                }
+                const elapsedDays = diffMs / (1000 * 60 * 60 * 24);
+                const estCigs = m.avgDailyCount * elapsedDays;
+                
+                const actualSmoked = appData.records
+                    .filter(r => new Date(r.datetime) <= targetEnd)
+                    .reduce((sum, r) => sum + Number(r.count), 0);
+                
+                let saved = Math.round((estCigs - actualSmoked) * pricePerCig);
+                if(saved < 0) saved = 0;
+                dataPoints.push(saved);
+            }
+
+            if (myChart) myChart.destroy();
+
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '累計節約金額 (円)',
+                        data: dataPoints,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function exportJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appData, null, 2));
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", `kem_backup_${new Date().toISOString().slice(0,10)}.json`);
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+        }
+
+        function exportCSV() {
+            let csv = "ID,日時(JST),本数,状況,タイミング\r\n";
+            appData.records.forEach(r => {
+                const d = new Date(r.datetime);
+                const jstStr = d.toLocaleString("en-US", { timeZone: "Asia/Tokyo" });
+                csv += `"${r.id}","${jstStr}",${r.count},"${r.reason || ''}","${r.timing || ''}"\r\n`;
+            });
+            const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", url);
+            dlAnchor.setAttribute("download", `kem_records_${new Date().toISOString().slice(0,10)}.json`);
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+        }
+
+        function importJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    if (parsed.master && parsed.records) {
+                        appData = parsed;
+                        saveData();
+                        renderRecordList();
+                        renderCharts();
+                        alert('データを正常に復元しました！');
+                    } else {
+                        alert('無効なバックアップファイルです。');
+                    }
+                } catch(err) {
+                    alert('ファイルの読み込みに失敗しました。');
+                }
+            };
+            reader.readAsText(file);
+        }
+    </script>
+</body>
+</html>
